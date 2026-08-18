@@ -39,7 +39,7 @@ ChemRPG.games = ChemRPG.games || {};
     zh: {
       title: '🔫 多原子離子射擊場',
       pickLang: '選擇語言', start: '開始遊戲',
-      howto: '🕹️ WASD 移動、移動鼠標瞄準、撳一下射擊。撳 K（或 ＋/－ 掣、Q/E）切換「正 / 負電荷」子彈。怪獸頭上只顯示離子名（唔會顯示電荷多少）——你要記住佢嘅電荷！只有電荷極性啱嘅子彈先會傷到佢，槍數 = |電荷|。行過會留低藍色腳印，幫你記住行過邊度、唔會喺迷宮蕩失路。',
+      howto: '🕹️ WASD 移動、移動鼠標瞄準、撳一下射擊。撳 K（或 ＋/－ 掣、Q/E）切換「正 / 負電荷」子彈。怪獸頭上只顯示離子名（唔會顯示電荷多少）——你要記住佢嘅電荷！只有電荷極性啱嘅子彈先會傷到佢，槍數 = |電荷|。行過會留低藍色腳印，幫你記住行過邊度、唔會喺迷宮蕩失路。打錯極性（用錯電荷）唔會傷到佢，反而令佢過充、更難打，所以一定要用啱極性！',
       health: '❤️ 生命', monsters: '👾 怪獸', kills: '💀 擊殺', time: '⏱ 時間',
       pos: '＋ 正電荷', neg: '－ 負電荷', switch: '（K / Q E 或撳掣切換）',
       win: '🎉 通關！你擊敗咗所有離子怪獸！', lose: '💥 你被離子怪獸消滅咗',
@@ -47,7 +47,7 @@ ChemRPG.games = ChemRPG.games || {};
     en: {
       title: '🔫 Polyatomic Ion Shooter',
       pickLang: 'Select Language', start: 'Start Game',
-      howto: '🕹️ WASD to move, mouse to aim, click to shoot. Press K (or ＋/－ buttons, Q/E) to switch "positive/negative" bullets. Monsters show only the ion name — NOT its charge — so you must remember it! Only bullets whose charge sign matches hurt them, and shots needed = |charge|. Your footsteps glow blue on the floor so you can trace where you have been.',
+      howto: '🕹️ WASD to move, mouse to aim, click to shoot. Press K (or ＋/－ buttons, Q/E) to switch "positive/negative" bullets. Monsters show only the ion name — NOT its charge — so you must remember it! Only bullets whose charge sign matches hurt them, and shots needed = |charge|. Your footsteps glow blue on the floor so you can trace where you have been. Firing the WRONG polarity overcharges the monster and makes it tougher, so always match the sign!',
       health: '❤️ Health', monsters: '👾 Monsters', kills: '💀 Kills', time: '⏱ Time',
       pos: '＋ Positive', neg: '－ Negative', switch: '(K / Q E or buttons to switch)',
       win: '🎉 Level Clear! You defeated all ion monsters!', lose: '💥 You were consumed by ion monsters',
@@ -303,6 +303,20 @@ ChemRPG.games = ChemRPG.games || {};
         return new THREE.CanvasTexture(c);
       }
 
+      // 怪獸頭上嘅「電荷格」：顯示剩餘要打幾多下（即時回饋）。過充時變紅色警告。
+      function chargeTex(hp, col, over) {
+        const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+        const g = c.getContext('2d'); g.clearRect(0, 0, 256, 64);
+        const n = Math.max(0, Math.round(hp));
+        const r = 9, gap = 22, startX = 128 - (n - 1) * gap / 2;
+        for (let i = 0; i < n; i++) {
+          g.beginPath(); g.arc(startX + i * gap, 32, r, 0, Math.PI * 2);
+          g.fillStyle = over ? '#ff5555' : 'rgba(255,255,255,.92)'; g.fill();
+          g.lineWidth = 3; g.strokeStyle = over ? '#ffaa00' : ('#' + col.toString(16).padStart(6, '0')); g.stroke();
+        }
+        return new THREE.CanvasTexture(c);
+      }
+
       function buildWorld() {
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0x0a0a18);
@@ -392,8 +406,13 @@ ChemRPG.games = ChemRPG.games || {};
           const label = makeLabel(ion.b, (lang === 'zh' ? ion.zh : ion.en));
           const grp = new THREE.Group();
           grp.add(body); grp.add(label); label.position.y = 1.5;
+          // 電荷格（剩餘要打幾多下，即時回饋）
+          const chargeLabel = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true }));
+          chargeLabel.material.map = chargeTex(Math.abs(ion.z), ion.c, false);
+          chargeLabel.scale.set(3.0, 0.75, 1);
+          grp.add(chargeLabel); chargeLabel.position.y = 2.4;
           grp.position.set(p.x, 1.1, p.z); scene.add(grp);
-          return { grp, body, label, ion, hp: Math.abs(ion.z), alive: true, pos: { x: p.x, z: p.z }, phase: Math.random() * 6, fireT: rand(1, FIRE_INTERVAL) };
+          return { grp, body, label, chargeLabel, ion, hp: Math.abs(ion.z), hpMax: Math.abs(ion.z), overT: 0, alive: true, pos: { x: p.x, z: p.z }, phase: Math.random() * 6, fireT: rand(1, FIRE_INTERVAL) };
         });
       }
 
@@ -420,6 +439,14 @@ ChemRPG.games = ChemRPG.games || {};
         fireballs.push({ mesh: fb, vel: dir.multiplyScalar(FIRE_SPEED), life: 4 });
       }
 
+      function updateChargePips(m) {
+        if (!m.chargeLabel) return;
+        const old = m.chargeLabel.material.map;
+        m.chargeLabel.material.map = chargeTex(m.hp, m.ion.c, m.hp > m.hpMax);
+        m.chargeLabel.material.needsUpdate = true;
+        if (old) old.dispose();
+      }
+
       function killMonster(m) {
         m.alive = false; kills++;
         playKill();
@@ -430,6 +457,7 @@ ChemRPG.games = ChemRPG.games || {};
         effects.push({ mesh: ring, life: 0.5 });
         scene.remove(m.grp); m.body.geometry.dispose(); m.body.material.dispose();
         m.label.material.map.dispose(); m.label.material.dispose();
+        if (m.chargeLabel) { m.chargeLabel.material.map.dispose(); m.chargeLabel.material.dispose(); }
         updateHud();
         if (kills >= TOTAL) finish(true);
       }
@@ -613,9 +641,11 @@ ChemRPG.games = ChemRPG.games || {};
           if (!m.alive) return;
           const to = new THREE.Vector3(player.x - m.pos.x, 0, player.z - m.pos.z);
           const d = to.length();
+          if (m.overT > 0) m.overT -= dt;
           if (d > 1.3) {
             to.normalize();
-            const nx = m.pos.x + to.x * MON_SPEED * dt, nz = m.pos.z + to.z * MON_SPEED * dt;
+            const spd = MON_SPEED * (m.overT > 0 ? 1.6 : 1);
+            const nx = m.pos.x + to.x * spd * dt, nz = m.pos.z + to.z * spd * dt;
             if (!blocked(nx, m.pos.z)) m.pos.x = nx;
             if (!blocked(m.pos.x, nz)) m.pos.z = nz;
           }
@@ -631,14 +661,22 @@ ChemRPG.games = ChemRPG.games || {};
           let hit = false;
           for (const m of monsters) {
             if (!m.alive) continue;
-            if (b.mesh.position.distanceTo(m.grp.position) < 1.15) {
-              if ((b.sign > 0) === (m.ion.z > 0)) {
-                m.hp--; m.body.material.emissiveIntensity = 0.8;
-                setTimeout(() => { if (m.body) m.body.material.emissiveIntensity = 0.25; }, 120);
-                if (m.hp <= 0) killMonster(m);
-              }
-              hit = true; break;
+          if (b.mesh.position.distanceTo(m.grp.position) < 1.15) {
+            if ((b.sign > 0) === (m.ion.z > 0)) {
+              // 極性啱 → 扣電荷
+              m.hp--; m.body.material.emissiveIntensity = 0.8;
+              setTimeout(() => { if (m.body) m.body.material.emissiveIntensity = 0.25; }, 120);
+              if (m.hp <= 0) { killMonster(m); hit = true; break; }
+            } else {
+              // 極性錯 → 過充：加 HP（封頂）+ 短暫加速，打錯反而更難
+              m.hp = Math.min(m.hpMax + 2, m.hp + 1);
+              m.overT = Math.max(m.overT, 2.5);
+              m.body.material.emissive.setHex(0xff3333); m.body.material.emissiveIntensity = 1;
+              setTimeout(() => { if (m.body) { m.body.material.emissive.setHex(m.ion.c); m.body.material.emissiveIntensity = 0.25; } }, 160);
             }
+            updateChargePips(m);
+            hit = true; break;
+          }
           }
           if (hit || b.life <= 0 || isWall(b.mesh.position.x, b.mesh.position.z)) { scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose(); bullets.splice(i, 1); }
         }

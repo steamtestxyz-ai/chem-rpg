@@ -4,7 +4,7 @@
  * 玩法：
  *  - 玩之前揀語言：繁體中文 / English（怪獸名用對應語言顯示）。
  *  - WASD 移動、鼠標瞄準（桌面用 Pointer Lock，手機拖動睇 + 射擊掣）。
- *  - 怪獸 = 多原子離子，會一路行近玩家並發射火球。
+ *  - 怪獸 = 離子（陽離子/陰離子），會一路行近玩家並發射火球。
  *  - 玩家揀「正電荷 / 負電荷」子彈射擊：
  *      怪獸電荷 +1 → 1 槍正電荷子彈就死
  *      怪獸電荷 −2 → 要 2 槍負電荷子彈
@@ -21,7 +21,13 @@ ChemRPG.games = ChemRPG.games || {};
 
   // 多原子離子（f=化學式含電荷，b=基礎化學式不含電荷，zh/en=中英文名，z=電荷；擊殺所需槍數 = |z|）
   const IONS = [
+    // —— 正電荷（陽離子）——
     { f: 'NH₄⁺',  b: 'NH₄',  zh: '銨',     en: 'Ammonium',     z: 1 },
+    { f: 'K⁺',    b: 'K',    zh: '鉀',     en: 'Potassium',    z: 1 },
+    { f: 'Ca²⁺',  b: 'Ca',   zh: '鈣',     en: 'Calcium',      z: 2 },
+    { f: 'Cu²⁺',  b: 'Cu',   zh: '銅',     en: 'Copper',       z: 2 },
+    { f: 'Al³⁺',  b: 'Al',   zh: '鋁',     en: 'Aluminium',    z: 3 },
+    // —— 負電荷（陰離子 / 多原子根）——
     { f: 'OH⁻',   b: 'OH',   zh: '氫氧根', en: 'Hydroxide',    z: -1 },
     { f: 'NO₃⁻',  b: 'NO₃',  zh: '硝酸根', en: 'Nitrate',      z: -1 },
     { f: 'CO₃²⁻', b: 'CO₃',  zh: '碳酸根', en: 'Carbonate',    z: -2 },
@@ -33,7 +39,7 @@ ChemRPG.games = ChemRPG.games || {};
     zh: {
       title: '🔫 多原子離子射擊場',
       pickLang: '選擇語言', start: '開始遊戲',
-      howto: '🕹️ WASD 移動、移動鼠標瞄準、撳一下射擊。撳 K（或 ＋/－ 掣、Q/E）切換「正 / 負電荷」子彈。怪獸頭上只顯示離子名（唔會顯示電荷多少）——你要記住佢嘅電荷！只有電荷極性啱嘅子彈先會傷到佢，槍數 = |電荷|。',
+      howto: '🕹️ WASD 移動、移動鼠標瞄準、撳一下射擊。撳 K（或 ＋/－ 掣、Q/E）切換「正 / 負電荷」子彈。怪獸頭上只顯示離子名（唔會顯示電荷多少）——你要記住佢嘅電荷！只有電荷極性啱嘅子彈先會傷到佢，槍數 = |電荷|。行過會留低藍色腳印，幫你記住行過邊度、唔會喺迷宮蕩失路。',
       health: '❤️ 生命', monsters: '👾 怪獸', kills: '💀 擊殺', time: '⏱ 時間',
       pos: '＋ 正電荷', neg: '－ 負電荷', switch: '（K / Q E 或撳掣切換）',
       win: '🎉 通關！你擊敗咗所有離子怪獸！', lose: '💥 你被離子怪獸消滅咗',
@@ -41,7 +47,7 @@ ChemRPG.games = ChemRPG.games || {};
     en: {
       title: '🔫 Polyatomic Ion Shooter',
       pickLang: 'Select Language', start: 'Start Game',
-      howto: '🕹️ WASD to move, mouse to aim, click to shoot. Press K (or ＋/－ buttons, Q/E) to switch "positive/negative" bullets. Monsters show only the ion name — NOT its charge — so you must remember it! Only bullets whose charge sign matches hurt them, and shots needed = |charge|.',
+      howto: '🕹️ WASD to move, mouse to aim, click to shoot. Press K (or ＋/－ buttons, Q/E) to switch "positive/negative" bullets. Monsters show only the ion name — NOT its charge — so you must remember it! Only bullets whose charge sign matches hurt them, and shots needed = |charge|. Your footsteps glow blue on the floor so you can trace where you have been.',
       health: '❤️ Health', monsters: '👾 Monsters', kills: '💀 Kills', time: '⏱ Time',
       pos: '＋ Positive', neg: '－ Negative', switch: '(K / Q E or buttons to switch)',
       win: '🎉 Level Clear! You defeated all ion monsters!', lose: '💥 You were consumed by ion monsters',
@@ -212,13 +218,15 @@ ChemRPG.games = ChemRPG.games || {};
       let grid = [];
       let scene, camera, renderer, clock;
       let player = { x: 0, z: 0 }, yaw = 0, pitch = 0;
-      let monsters = [], bullets = [], fireballs = [], effects = [];
+      let monsters = [], bullets = [], fireballs = [], effects = [], footprints = [];
       let hp = MAX_HP, kills = 0, elapsed = 0, currentSign = 1;
       let started = false, ended = false, locked = false;
       let rafId = null, hudTimer = null, cv = null;
       let onPointerLockRef = null, onMouseDownRef = null;
       const keys = {};
       const stick = { x: 0, y: 0 };
+      let footGeo = null, footMat = null;
+      let lastFootX = 0, lastFootZ = 0, footSide = false;
 
       function cellToWorld(cx, cy) { return { x: (cx - HALF) * CELL, z: (cy - HALF) * CELL }; }
       function worldToCell(x, z) { return { cx: Math.round(x / CELL + HALF), cy: Math.round(z / CELL + HALF) }; }
@@ -284,6 +292,17 @@ ChemRPG.games = ChemRPG.games || {};
         sp.scale.set(3.2, 2.0, 1); return sp;
       }
 
+      // 腳印紋理（行過留低軌跡，防迷路）
+      function footTex() {
+        const c = document.createElement('canvas'); c.width = c.height = 48;
+        const g = c.getContext('2d');
+        g.clearRect(0, 0, 48, 48);
+        g.fillStyle = 'rgba(150,225,255,0.9)';
+        g.beginPath(); g.ellipse(24, 31, 11, 15, 0, 0, Math.PI * 2); g.fill();   // 腳掌
+        g.beginPath(); g.ellipse(24, 12, 8, 7, 0, 0, Math.PI * 2); g.fill();      // 腳踭
+        return new THREE.CanvasTexture(c);
+      }
+
       function buildWorld() {
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0x0a0a18);
@@ -308,6 +327,10 @@ ChemRPG.games = ChemRPG.games || {};
         const ceil = new THREE.Mesh(new THREE.PlaneGeometry(GRID * CELL, GRID * CELL),
           new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 1 }));
         ceil.rotation.x = Math.PI / 2; ceil.position.y = WALL_H; scene.add(ceil);
+
+        // 腳印：平面貼地、半透明、不寫深度（避免 z-fighting）
+        footGeo = new THREE.PlaneGeometry(0.5, 0.7);
+        footMat = new THREE.MeshBasicMaterial({ map: footTex(), transparent: true, opacity: 0.5, depthWrite: false, color: 0xaff2ff });
 
         const wallTex = stoneTex('#2a2440', 'rgba(150,140,200,.3)');
         const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9 });
@@ -476,6 +499,7 @@ ChemRPG.games = ChemRPG.games || {};
 
         genMaze();
         buildWorld();
+        lastFootX = player.x; lastFootZ = player.z; footSide = false; footprints.length = 0;
         spawnMonsters();
         started = true;
         startAmbience();
@@ -551,6 +575,23 @@ ChemRPG.games = ChemRPG.games || {};
           const nz = player.z + mv.z * PLAYER_SPEED * dt;
           if (!blocked(nx, player.z)) player.x = nx;
           if (!blocked(player.x, nz)) player.z = nz;
+        }
+        // 留下腳印（行過嘅路，防迷路）
+        if (started && !ended && mv.lengthSq() > 0) {
+          const fd = Math.hypot(player.x - lastFootX, player.z - lastFootZ);
+          if (fd > 1.3) {
+            const d = mv.clone().normalize();
+            const perp = new THREE.Vector3(-d.z, 0, d.x);
+            const side = footSide ? 0.2 : -0.2;
+            const fm = new THREE.Mesh(footGeo, footMat);
+            fm.rotation.x = -Math.PI / 2;
+            fm.position.set(player.x + perp.x * side, 0.03, player.z + perp.z * side);
+            fm.renderOrder = 2;
+            scene.add(fm);
+            footprints.push(fm);
+            if (footprints.length > 280) { const old = footprints.shift(); scene.remove(old); }
+            lastFootX = player.x; lastFootZ = player.z; footSide = !footSide;
+          }
         }
         camera.position.set(player.x, EYE, player.z);
         camera.rotation.y = yaw; camera.rotation.x = pitch;

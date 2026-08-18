@@ -10,7 +10,7 @@
  *      怪獸電荷 −2 → 要 2 槍負電荷子彈
  *      怪獸電荷 −3 → 要 3 槍負電荷子彈（視乎吓數 = |電荷|，極性要啱）
  *  - 清光所有怪獸 = 通關。
- * 測試難度：5 隻怪獸、速度慢、火球傷低、開局唔會被圍。
+ * 難度：16 隻怪獸（正負各半、分散於迷宮）、速度慢、火球傷低。
  * 技術：本地 three.min.js（js/lib）。
  * ============================================================ */
 window.ChemRPG = window.ChemRPG || {};
@@ -21,18 +21,18 @@ ChemRPG.games = ChemRPG.games || {};
 
   // 多原子離子（f=化學式含電荷，b=基礎化學式不含電荷，zh/en=中英文名，z=電荷；擊殺所需槍數 = |z|）
   const IONS = [
-    // —— 正電荷（陽離子）——
-    { f: 'NH₄⁺',  b: 'NH₄',  zh: '銨',     en: 'Ammonium',     z: 1 },
-    { f: 'K⁺',    b: 'K',    zh: '鉀',     en: 'Potassium',    z: 1 },
-    { f: 'Ca²⁺',  b: 'Ca',   zh: '鈣',     en: 'Calcium',      z: 2 },
-    { f: 'Cu²⁺',  b: 'Cu',   zh: '銅',     en: 'Copper',       z: 2 },
-    { f: 'Al³⁺',  b: 'Al',   zh: '鋁',     en: 'Aluminium',    z: 3 },
-    // —— 負電荷（陰離子 / 多原子根）——
-    { f: 'OH⁻',   b: 'OH',   zh: '氫氧根', en: 'Hydroxide',    z: -1 },
-    { f: 'NO₃⁻',  b: 'NO₃',  zh: '硝酸根', en: 'Nitrate',      z: -1 },
-    { f: 'CO₃²⁻', b: 'CO₃',  zh: '碳酸根', en: 'Carbonate',    z: -2 },
-    { f: 'SO₄²⁻', b: 'SO₄',  zh: '硫酸根', en: 'Sulfate',      z: -2 },
-    { f: 'PO₄³⁻', b: 'PO₄',  zh: '磷酸根', en: 'Phosphate',    z: -3 },
+    // —— 正電荷（陽離子，冷色系）——
+    { f: 'NH₄⁺',  b: 'NH₄',  zh: '銨',     en: 'Ammonium',     z: 1, c: 0x60a5fa },
+    { f: 'K⁺',    b: 'K',    zh: '鉀',     en: 'Potassium',    z: 1, c: 0x34d399 },
+    { f: 'Ca²⁺',  b: 'Ca',   zh: '鈣',     en: 'Calcium',      z: 2, c: 0x22d3ee },
+    { f: 'Cu²⁺',  b: 'Cu',   zh: '銅',     en: 'Copper',       z: 2, c: 0x818cf8 },
+    { f: 'Al³⁺',  b: 'Al',   zh: '鋁',     en: 'Aluminium',    z: 3, c: 0xa78bfa },
+    // —— 負電荷（陰離子 / 多原子根，暖色系）——
+    { f: 'OH⁻',   b: 'OH',   zh: '氫氧根', en: 'Hydroxide',    z: -1, c: 0xf472b6 },
+    { f: 'NO₃⁻',  b: 'NO₃',  zh: '硝酸根', en: 'Nitrate',      z: -1, c: 0xef4444 },
+    { f: 'CO₃²⁻', b: 'CO₃',  zh: '碳酸根', en: 'Carbonate',    z: -2, c: 0xfbbf24 },
+    { f: 'SO₄²⁻', b: 'SO₄',  zh: '硫酸根', en: 'Sulfate',      z: -2, c: 0xfb923c },
+    { f: 'PO₄³⁻', b: 'PO₄',  zh: '磷酸根', en: 'Phosphate',    z: -3, c: 0xd946ef },
   ];
 
   const T = {
@@ -207,7 +207,7 @@ ChemRPG.games = ChemRPG.games || {};
       const CELL = 4, GRID = 15, HALF = (GRID - 1) / 2;
       const WALL_H = 3.6;
       const MAX_HP = 100;
-      const TOTAL = 5;                 // 測試：5 隻怪獸
+      const TOTAL = 16;                // 16 隻怪獸（正負各半）
       const MON_SPEED = 2.2;           // 慢速（唔難）
       const FIRE_INTERVAL = 2.8;
       const FIRE_SPEED = 10, FIRE_DMG = 6;
@@ -362,11 +362,23 @@ ChemRPG.games = ChemRPG.games || {};
             if (d > 14) floors.push(w);
           }
         }
-        const picks = shuffle(floors).slice(0, TOTAL);
-        const ions = shuffle(IONS).slice(0, TOTAL);
+        // 揀位：盡量分散（相隔 >5 單位），唔好一舖圍埋一齊
+        const cand = shuffle(floors); const picks = [];
+        for (const f of cand) {
+          if (picks.length >= TOTAL) break;
+          if (picks.every(c => Math.hypot(c.x - f.x, c.z - f.z) > 5)) picks.push(f);
+        }
+        let k = 0;
+        while (picks.length < TOTAL && k < cand.length) { if (!picks.includes(cand[k])) picks.push(cand[k]); k++; }
+        // 正負各半：8 隻正 + 8 隻負（同一隻離子可以重複出現）
+        const pos = IONS.filter(i => i.z > 0), neg = IONS.filter(i => i.z < 0);
+        const ionPicks = [];
+        for (let i = 0; i < TOTAL / 2; i++) ionPicks.push(pos[Math.floor(Math.random() * pos.length)]);
+        for (let i = 0; i < TOTAL / 2; i++) ionPicks.push(neg[Math.floor(Math.random() * neg.length)]);
+        const ions = shuffle(ionPicks);
         monsters = ions.map((ion, i) => {
           const p = picks[i] || cellToWorld(7, 7);
-          const col = ion.z > 0 ? 0x60a5fa : 0xf472b6;
+          const col = ion.c;
           const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.95, 1),
             new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.25, roughness: 0.5, flatShading: true }));
           // 眼

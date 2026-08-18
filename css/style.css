@@ -221,7 +221,7 @@ html, body {
   border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
   background: #05070f; touch-action: none;
 }
-#fps-canvas { position: absolute; inset: 0; display: block; width: 100% !important; height: 100% !important; cursor: crosshair; }
+#fps-canvas { position: absolute; inset: 0; display: block; width: 100% !important; height: 100% !important; cursor: crosshair; touch-action: none; }
 #hud-top {
   position: absolute; top: 10px; left: 10px; right: 10px; z-index: 5;
   display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none;
@@ -260,6 +260,26 @@ html, body {
   background: radial-gradient(circle, rgba(255, 45, 85, 0) 40%, rgba(255, 45, 85, .55) 100%);
   transition: opacity .12s ease;
 }
+/* 手機虛擬搖桿（只有觸控裝置先顯示）*/
+#joy {
+  display: none; position: absolute; left: 18px; bottom: 18px; z-index: 6;
+  width: 116px; height: 116px; border-radius: 50%;
+  background: rgba(255, 255, 255, .08); border: 1px solid var(--line); touch-action: none;
+}
+#joy-knob {
+  position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 35% 30%, #ffffff, #b9c2ee);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, .5); pointer-events: none;
+}
+#orient-tip {
+  display: none; position: absolute; inset: 0; z-index: 20;
+  align-items: center; justify-content: center; text-align: center;
+  background: rgba(5, 7, 15, .96); color: var(--text); font-size: 18px; line-height: 1.7;
+}
+#orient-tip .rot { font-size: 48px; margin-bottom: 10px; animation: spin 2s linear infinite; }
+#orient-tip span { color: var(--muted); font-size: 13px; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .float-score {
   position: absolute; transform: translate(-50%, -50%); font-weight: 900; font-size: 22px;
   pointer-events: none; z-index: 6; text-shadow: 0 0 6px rgba(0, 0, 0, .8);
@@ -286,3 +306,18 @@ html, body {
   .charge-btn { padding: 14px 18px; font-size: 15px; }
   .act-btn { padding: 14px 22px; }
 }
+
+/* ---------- 手機 / 觸控：全畫面 + 搖桿 ---------- */
+@media (pointer: coarse) {
+  #hud { position: fixed; inset: 0; height: 100vh; width: 100vw; border-radius: 0; border: none; z-index: 1000; }
+  #joy { display: block; }
+  #hud-bottom { bottom: 22px; gap: 10px; }
+  .charge-btn { padding: 16px 20px; font-size: 17px; min-width: 64px; }
+  .act-btn { padding: 18px 30px; font-size: 19px; }
+  #hud-top span { font-size: 13px; padding: 6px 11px; }
+  #crosshair { font-size: 30px; }
+}
+:fullscreen #hud, :-webkit-full-screen #hud {
+  width: 100vw; height: 100vh; border-radius: 0; border: none;
+}
+:fullscreen #joy, :-webkit-full-screen #joy { display: block; }

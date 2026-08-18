@@ -218,6 +218,7 @@ ChemRPG.games = ChemRPG.games || {};
       let rafId = null, hudTimer = null, cv = null;
       let onPointerLockRef = null, onMouseDownRef = null;
       const keys = {};
+      const stick = { x: 0, y: 0 };
 
       function cellToWorld(cx, cy) { return { x: (cx - HALF) * CELL, z: (cy - HALF) * CELL }; }
       function worldToCell(x, z) { return { cx: Math.round(x / CELL + HALF), cy: Math.round(z / CELL + HALF) }; }
@@ -424,19 +425,54 @@ ChemRPG.games = ChemRPG.games || {};
               <button id="mute-btn" class="hud-mini" type="button">🔊</button>
             </div>
             <div id="crosshair">✛</div>
+            <div id="joy" class="touch-only"><div id="joy-knob"></div></div>
             <div id="hud-bottom">
               <button class="charge-btn" id="cb-pos">＋ 正</button>
               <button class="charge-btn" id="cb-neg">－ 負</button>
-              <button class="charge-btn" id="cb-toggle">🔄 切換 (K)</button>
+              <button class="charge-btn" id="cb-toggle">🔄 切換</button>
               <button class="act-btn" id="shoot-btn">🔫 ${lang === 'zh' ? '射擊' : 'Shoot'}</button>
             </div>
             <div id="dmg-flash"></div>
+            <div id="orient-tip"><div><div class="rot">🔄</div>請將手機橫置<br><span>Rotate your phone to landscape</span></div></div>
           </div>`;
         container.querySelector('#cb-pos').onclick = () => { currentSign = 1; updateHud(); };
         container.querySelector('#cb-neg').onclick = () => { currentSign = -1; updateHud(); };
         container.querySelector('#cb-toggle').onclick = () => { currentSign = -currentSign; updateHud(); };
         container.querySelector('#mute-btn').onclick = () => { muted = !muted; if (masterGain) masterGain.gain.value = muted ? 0 : 0.9; container.querySelector('#mute-btn').textContent = muted ? '🔇' : '🔊'; };
         container.querySelector('#shoot-btn').onclick = () => shoot();
+
+        // 手機：虛擬搖桿移動
+        const joyEl = container.querySelector('#joy');
+        const knobEl = container.querySelector('#joy-knob');
+        let joyId = null, joyCx = 0, joyCy = 0; const joyMax = 46;
+        function joyStart(e) {
+          joyId = e.pointerId;
+          const r = joyEl.getBoundingClientRect();
+          joyCx = r.left + r.width / 2; joyCy = r.top + r.height / 2;
+          try { joyEl.setPointerCapture(e.pointerId); } catch (err) {}
+          joyMove(e);
+        }
+        function joyMove(e) {
+          if (e.pointerId !== joyId) return;
+          let dx = e.clientX - joyCx, dy = e.clientY - joyCy;
+          const dist = Math.hypot(dx, dy);
+          if (dist > joyMax) { dx = dx / dist * joyMax; dy = dy / dist * joyMax; }
+          knobEl.style.transform = 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px))';
+          stick.x = dx / joyMax; stick.y = -dy / joyMax;
+        }
+        function joyEnd(e) {
+          if (e.pointerId !== joyId) return;
+          joyId = null; knobEl.style.transform = 'translate(-50%, -50%)'; stick.x = 0; stick.y = 0;
+        }
+        joyEl.addEventListener('pointerdown', joyStart);
+        joyEl.addEventListener('pointermove', joyMove);
+        joyEl.addEventListener('pointerup', joyEnd);
+        joyEl.addEventListener('pointercancel', joyEnd);
+
+        // 手機：橫向全畫面 + 豎屏提示
+        checkOrient();
+        window.addEventListener('orientationchange', checkOrient);
+        try { const hudNow = container.querySelector('#hud'); if (hudNow && hudNow.requestFullscreen) hudNow.requestFullscreen().catch(() => {}); } catch (e) {}
 
         genMaze();
         buildWorld();
@@ -456,7 +492,7 @@ ChemRPG.games = ChemRPG.games || {};
         window.addEventListener('keyup', onKeyUpRef);
         // 手機：拖動睇 + 撳一下射擊
         let drag = false, lx = 0, ly = 0, mv = 0;
-        cv.addEventListener('pointerdown', e => { if (isTouch) { drag = true; lx = e.clientX; ly = e.clientY; mv = 0; } });
+        cv.addEventListener('pointerdown', e => { if (isTouch) { drag = true; lx = e.clientX; ly = e.clientY; mv = 0; try { cv.setPointerCapture(e.pointerId); } catch (err) {} } });
         cv.addEventListener('pointermove', e => { if (isTouch && drag) { const dx = e.clientX - lx, dy = e.clientY - ly; lx = e.clientX; ly = e.clientY; mv += Math.abs(dx) + Math.abs(dy); yaw -= dx * 0.005; pitch = clamp(pitch - dy * 0.005, -1.2, 1.2); } });
         cv.addEventListener('pointerup', () => { if (isTouch) { drag = false; if (mv < 8) shoot(); } });
         window.addEventListener('resize', onResize);
@@ -472,12 +508,20 @@ ChemRPG.games = ChemRPG.games || {};
         yaw -= e.movementX * 0.0022;
         pitch = clamp(pitch - e.movementY * 0.0022, -1.2, 1.2);
       }
+      function checkOrient() {
+        const tip = container.querySelector('#orient-tip');
+        if (!tip) return;
+        const portrait = window.innerHeight > window.innerWidth;
+        const mobile = isTouch;
+        tip.style.display = (mobile && portrait) ? 'flex' : 'none';
+      }
       function onResize() {
         if (!renderer) return;
         const box = container.querySelector('#hud') || container;
         const w = box.clientWidth, h = box.clientHeight;
         if (!w || !h) return;
         camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false);
+        checkOrient();
       }
       function resize() {
         const box = container.querySelector('#hud') || container;
@@ -499,6 +543,8 @@ ChemRPG.games = ChemRPG.games || {};
         const mv = new THREE.Vector3();
         if (keys.w) mv.add(fwd); if (keys.s) mv.sub(fwd);
         if (keys.d) mv.add(right); if (keys.a) mv.sub(right);
+        if (stick.y) mv.addScaledVector(fwd, stick.y);
+        if (stick.x) mv.addScaledVector(right, stick.x);
         if (mv.lengthSq() > 0) {
           mv.normalize();
           const nx = player.x + mv.x * PLAYER_SPEED * dt;
@@ -574,6 +620,7 @@ ChemRPG.games = ChemRPG.games || {};
         if (onPointerLockRef) document.removeEventListener('pointerlockchange', onPointerLockRef);
         if (onMouseDownRef) document.removeEventListener('mousedown', onMouseDownRef);
         window.removeEventListener('resize', onResize);
+        window.removeEventListener('orientationchange', checkOrient);
         if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
         try { renderer.dispose(); } catch (e) {}
         const scaled = win ? Math.round((kills / TOTAL) * 50 + (hp / MAX_HP) * 50)
